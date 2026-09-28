@@ -46,12 +46,42 @@ if (!fs.existsSync(BANS_FILE)) {
   fs.writeFileSync(BANS_FILE, JSON.stringify([]));
 }
 
-if (!fs.existsSync("./appstate.json")) {
-  console.error("Error: appstate.json missing!");
-  process.exit(1);
+// -------------------------------------------------------------
+// LOAD APPSTATE (ENV VAR -> LOCAL FILE -> RENDER SECRET FILE)
+// -------------------------------------------------------------
+let appState = null;
+
+if (process.env.APP_STATE) {
+  try {
+    appState = JSON.parse(process.env.APP_STATE);
+    console.log("Loaded appState from process.env.APP_STATE.");
+  } catch (err) {
+    console.error("Failed to parse APP_STATE environment variable:", err);
+  }
 }
 
-const appState = JSON.parse(fs.readFileSync("./appstate.json", "utf8"));
+if (!appState && fs.existsSync("./appstate.json")) {
+  try {
+    appState = JSON.parse(fs.readFileSync("./appstate.json", "utf8"));
+    console.log("Loaded appState from ./appstate.json.");
+  } catch (err) {
+    console.error("Failed to parse ./appstate.json:", err);
+  }
+}
+
+if (!appState && fs.existsSync("/etc/secrets/appstate.json")) {
+  try {
+    appState = JSON.parse(fs.readFileSync("/etc/secrets/appstate.json", "utf8"));
+    console.log("Loaded appState from /etc/secrets/appstate.json.");
+  } catch (err) {
+    console.error("Failed to parse /etc/secrets/appstate.json:", err);
+  }
+}
+
+if (!appState) {
+  console.error("Error: appstate configuration missing! Add APP_STATE env var or appstate.json file.");
+  process.exit(1);
+}
 
 login({ appState }, (err, api) => {
   if (err) return console.error("Login failed:", err);
