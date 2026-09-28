@@ -117,9 +117,6 @@ function handleRefereeLogic(api, event) {
       if (messageText.includes("kick")) {
         pendingVarReviews.delete(threadID);
 
-        // Reapply Red Card Emoji (🟥)
-        api.changeNickname(review.redNickname, threadID, review.targetUserID);
-
         // Send var-foul.gif or var-foul-2.gif
         const foulMsg = {};
         const foulGif = getRandomGif("var-foul");
@@ -127,10 +124,14 @@ function handleRefereeLogic(api, event) {
 
         api.sendMessage(foulMsg, threadID);
 
-        // Kick user immediately
-        api.removeUserFromGroup(review.targetUserID, threadID, (err) => {
-          if (err) console.error("Failed to kick user after VAR review:", err);
-          saveBan(review.targetUserID, threadID, Date.now() + BAN_DURATION_MS);
+        // Remove card emojis from nickname FIRST, then kick user
+        api.changeNickname(review.cleanNickname, threadID, review.targetUserID, (err) => {
+          if (err) console.error("Failed to clean nickname before kick:", err);
+
+          api.removeUserFromGroup(review.targetUserID, threadID, (err) => {
+            if (err) console.error("Failed to kick user after VAR review:", err);
+            saveBan(review.targetUserID, threadID, Date.now() + BAN_DURATION_MS);
+          });
         });
 
         return;
@@ -217,13 +218,18 @@ function handleRefereeLogic(api, event) {
     const nicknames = info.nicknames || {};
     const currentNickname = nicknames[senderID] || "";
 
+    // Find full name from thread info if user has no custom nickname
+    const userObj = info.userInfo ? info.userInfo.find(u => u.id === senderID) : null;
+    const fullName = userObj ? userObj.name : "";
+
     // CASE 1: USER ALREADY HAS YELLOW CARD -> CHANGE TO RED EMOJI & START 30s COUNTDOWN
     if (currentNickname.includes(YELLOW_CARD)) {
       if (pendingKicks.has(threadID)) {
         clearTimeout(pendingKicks.get(threadID).timeout);
       }
 
-      const cleanNickname = currentNickname.replace(YELLOW_CARD, "").trim();
+      // Extract clean nickname (without cards) or fallback to full name
+      const cleanNickname = currentNickname.replace(YELLOW_CARD, "").replace(RED_CARD, "").trim() || fullName;
       const redNickname = `${cleanNickname} ${RED_CARD}`.trim();
 
       // Immediately change nickname to Red Card emoji (🟥)
@@ -242,13 +248,14 @@ function handleRefereeLogic(api, event) {
       const timeout = setTimeout(() => {
         pendingKicks.delete(threadID);
 
-        // Clean nickname before kicking
-        api.changeNickname(cleanNickname, threadID, senderID);
+        // Remove red card from nickname FIRST, then kick user
+        api.changeNickname(cleanNickname, threadID, senderID, (err) => {
+          if (err) console.error("Failed to clean nickname before kick:", err);
 
-        // Kick user
-        api.removeUserFromGroup(senderID, threadID, (err) => {
-          if (err) console.error("Failed to kick user:", err);
-          saveBan(senderID, threadID, Date.now() + BAN_DURATION_MS);
+          api.removeUserFromGroup(senderID, threadID, (err) => {
+            if (err) console.error("Failed to kick user:", err);
+            saveBan(senderID, threadID, Date.now() + BAN_DURATION_MS);
+          });
         });
       }, KICK_DELAY_MS);
 
@@ -263,7 +270,9 @@ function handleRefereeLogic(api, event) {
 
     // CASE 2: FIRST OFFENSE -> ADD YELLOW CARD EMOJI (🟨) & SEND YELLOW GIF
     } else {
-      const newNickname = currentNickname ? `${currentNickname} ${YELLOW_CARD}` : `User ${YELLOW_CARD}`;
+      // Use existing custom nickname, or fall back to full name
+      const baseName = currentNickname || fullName || "User";
+      const newNickname = `${baseName} ${YELLOW_CARD}`;
       
       api.changeNickname(newNickname, threadID, senderID, (err) => {
         if (err) return console.error("Failed to set nickname:", err);
