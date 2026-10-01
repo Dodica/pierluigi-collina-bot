@@ -83,8 +83,26 @@ if (!appState) {
   process.exit(1);
 }
 
-login({ appState }, (err, api) => {
-  if (err) return console.error("Login failed:", err);
+// Custom user agent to simulate a real browser session
+const loginOptions = {
+  appState: appState
+};
+
+login(loginOptions, (err, api) => {
+  if (err) {
+    console.error("Login failed. Your appState/cookies have likely expired or been invalidated by Facebook.");
+    console.error("Error details:", err);
+    process.exit(1);
+  }
+
+  // Save/update refreshed appState locally
+  try {
+    const updatedAppState = api.getAppState();
+    fs.writeFileSync("./appstate.json", JSON.stringify(updatedAppState, null, 2));
+    console.log("Successfully logged in! Fresh appState saved to ./appstate.json.");
+  } catch (saveErr) {
+    console.error("Failed to save updated appState:", saveErr);
+  }
 
   console.log("Pierluigi Collina Referee Bot (Full VAR System) is active!");
   api.setOptions({ listenEvents: true, selfListen: false });
@@ -104,27 +122,20 @@ function handleRefereeLogic(api, event) {
   const { body, threadID, senderID } = event;
   const messageText = body.trim().toLowerCase();
 
-  // -------------------------------------------------------------
   // 1. CHECK FOR PENDING VAR REVIEW DECISION (DOMINIK PAVEL)
-  // -------------------------------------------------------------
   if (pendingVarReviews.has(threadID)) {
     const review = pendingVarReviews.get(threadID);
 
-    // Verify if message is sent by Dominik Pavel
     if (senderID === review.dominikID || review.isDominikPavel) {
-      
-      // OPTION A: DECISION IS "KICK"
       if (messageText.includes("kick")) {
         pendingVarReviews.delete(threadID);
 
-        // Send var-foul.gif or var-foul-2.gif
         const foulMsg = {};
         const foulGif = getRandomGif("var-foul");
         if (foulGif) foulMsg.attachment = fs.createReadStream(foulGif);
 
         api.sendMessage(foulMsg, threadID);
 
-        // Remove card emojis from nickname FIRST, then kick user
         api.changeNickname(review.cleanNickname, threadID, review.targetUserID, (err) => {
           if (err) console.error("Failed to clean nickname before kick:", err);
 
@@ -137,11 +148,9 @@ function handleRefereeLogic(api, event) {
         return;
       }
 
-      // OPTION B: DECISION IS "PUSTI"
       if (messageText.includes("pusti")) {
         pendingVarReviews.delete(threadID);
 
-        // User stays on Yellow Card (🟨) - Red card cancelled!
         const passMsg = {};
         const passGif = getRandomGif("var-pass");
         if (passGif) passMsg.attachment = fs.createReadStream(passGif);
@@ -153,22 +162,17 @@ function handleRefereeLogic(api, event) {
     }
   }
 
-  // -------------------------------------------------------------
   // 2. CHECK FOR "VAR" CALL
-  // -------------------------------------------------------------
   const words = messageText.split(/\s+/);
   if (words.includes("var") || messageText === "var") {
     if (pendingKicks.has(threadID)) {
       const pending = pendingKicks.get(threadID);
       
-      // Stop the 30-second kick countdown
       clearTimeout(pending.timeout);
       pendingKicks.delete(threadID);
 
-      // Revert nickname back to Yellow Card (🟨) during VAR review
       api.changeNickname(pending.yellowNickname, threadID, pending.userID);
 
-      // Locate Dominik Pavel in thread participants
       api.getThreadInfo(threadID, (err, info) => {
         let dominikID = null;
         if (!err && info && info.userInfo) {
@@ -178,14 +182,13 @@ function handleRefereeLogic(api, event) {
           if (dominik) dominikID = dominik.id;
         }
 
-        // Store active VAR review session
         pendingVarReviews.set(threadID, {
           targetUserID: pending.userID,
           cleanNickname: pending.cleanNickname,
           yellowNickname: pending.yellowNickname,
           redNickname: pending.redNickname,
           dominikID: dominikID,
-          isDominikPavel: true // fallback matching
+          isDominikPavel: true
         });
 
         const msg = {
@@ -193,7 +196,6 @@ function handleRefereeLogic(api, event) {
           mentions: dominikID ? [{ tag: "@Dominik Pavel", id: dominikID }] : []
         };
 
-        // Attach random var-check GIF
         const varGif = getRandomGif("var-check");
         if (varGif) msg.attachment = fs.createReadStream(varGif);
 
@@ -206,9 +208,7 @@ function handleRefereeLogic(api, event) {
     }
   }
 
-  // -------------------------------------------------------------
   // 3. CHECK FOR FORBIDDEN PHRASES
-  // -------------------------------------------------------------
   const triggered = FORBIDDEN_PHRASES.some(phrase => messageText.includes(phrase));
   if (!triggered) return;
 
@@ -218,37 +218,30 @@ function handleRefereeLogic(api, event) {
     const nicknames = info.nicknames || {};
     const currentNickname = nicknames[senderID] || "";
 
-    // Find full name from thread info if user has no custom nickname
     const userObj = info.userInfo ? info.userInfo.find(u => u.id === senderID) : null;
     const fullName = userObj ? userObj.name : "";
 
-    // CASE 1: USER ALREADY HAS YELLOW CARD -> CHANGE TO RED EMOJI & START 30s COUNTDOWN
     if (currentNickname.includes(YELLOW_CARD)) {
       if (pendingKicks.has(threadID)) {
         clearTimeout(pendingKicks.get(threadID).timeout);
       }
 
-      // Extract clean nickname (without cards) or fallback to full name
       const cleanNickname = currentNickname.replace(YELLOW_CARD, "").replace(RED_CARD, "").trim() || fullName;
       const redNickname = `${cleanNickname} ${RED_CARD}`.trim();
 
-      // Immediately change nickname to Red Card emoji (🟥)
       api.changeNickname(redNickname, threadID, senderID, (err) => {
         if (err) console.error("Failed to set red card nickname:", err);
       });
 
-      // Send Red Card GIF (red.gif or red-2.gif)
       const redMsg = {};
       const redGif = getRandomGif("red");
       if (redGif) redMsg.attachment = fs.createReadStream(redGif);
 
       api.sendMessage(redMsg, threadID);
 
-      // Start 30-second timer before kick
       const timeout = setTimeout(() => {
         pendingKicks.delete(threadID);
 
-        // Remove red card from nickname FIRST, then kick user
         api.changeNickname(cleanNickname, threadID, senderID, (err) => {
           if (err) console.error("Failed to clean nickname before kick:", err);
 
@@ -259,7 +252,6 @@ function handleRefereeLogic(api, event) {
         });
       }, KICK_DELAY_MS);
 
-      // Save active countdown details
       pendingKicks.set(threadID, { 
         userID: senderID, 
         timeout, 
@@ -268,16 +260,13 @@ function handleRefereeLogic(api, event) {
         redNickname 
       });
 
-    // CASE 2: FIRST OFFENSE -> ADD YELLOW CARD EMOJI (🟨) & SEND YELLOW GIF
     } else {
-      // Use existing custom nickname, or fall back to full name
       const baseName = currentNickname || fullName || "User";
       const newNickname = `${baseName} ${YELLOW_CARD}`;
       
       api.changeNickname(newNickname, threadID, senderID, (err) => {
         if (err) return console.error("Failed to set nickname:", err);
 
-        // Send Yellow Card GIF (yellow.gif or yellow-2.gif)
         const yellowMsg = {};
         const yellowGif = getRandomGif("yellow");
         if (yellowGif) yellowMsg.attachment = fs.createReadStream(yellowGif);
@@ -288,14 +277,12 @@ function handleRefereeLogic(api, event) {
   });
 }
 
-// Save ban info locally
 function saveBan(userID, threadID, unbanTime) {
   const bans = JSON.parse(fs.readFileSync(BANS_FILE, "utf8"));
   bans.push({ userID, threadID, unbanTime });
   fs.writeFileSync(BANS_FILE, JSON.stringify(bans, null, 2));
 }
 
-// Check database every minute and re-add users whose ban expired
 function checkAndUnbanUsers(api) {
   let bans = JSON.parse(fs.readFileSync(BANS_FILE, "utf8"));
   const now = Date.now();
