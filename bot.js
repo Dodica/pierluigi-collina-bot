@@ -22,7 +22,8 @@ const FORBIDDEN_PHRASES = [
   "ti u smeću",
   "ti ga metnem",
   "mom si visia",
-  "govno jesi"
+  "govno jesi",
+  "popusis mi kitu"
 ];
 
 const YELLOW_CARD = "🟨";
