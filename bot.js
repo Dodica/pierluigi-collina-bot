@@ -24,7 +24,8 @@ const FORBIDDEN_PHRASES = [
   "govno jesi",
   "mi kitu",
   "mi kruti",
-  "si nosan"
+  "si nosan",
+  "ti ga spakovo"
 ];
 
 const YELLOW_CARD = "🟨";
