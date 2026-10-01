@@ -17,7 +17,11 @@ const FORBIDDEN_PHRASES = [
   "nos ti posran",
   "na kurcu te nosam",
   "moj te pipo",
-  "uvalim ti kruti"
+  "valim ti kruti",
+  "ti u smecu",
+  "ti u smeću",
+  "ti ga metnem",
+  "mom si visia"
 ];
 
 const YELLOW_CARD = "🟨";
