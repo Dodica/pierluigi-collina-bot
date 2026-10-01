@@ -12,18 +12,19 @@ http.createServer((req, res) => {
 
 // Forbidden phrases (matches regardless of upper/lower case)
 const FORBIDDEN_PHRASES = [
-  "uleti ti kruti",
-  "uvalim ti kitu",
-  "nos ti posran",
-  "na kurcu te nosam",
-  "moj te pipo",
-  "valim ti kruti",
+  "ti kruti",
+  "ti kitu",
+  "ti posran",
+  "te nosam",
+  "te pipo",
   "ti u smecu",
   "ti u smeću",
   "ti ga metnem",
   "mom si visia",
   "govno jesi",
-  "popusis mi kitu"
+  "mi kitu",
+  "mi kruti",
+  "si nosan"
 ];
 
 const YELLOW_CARD = "🟨";
